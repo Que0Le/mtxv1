@@ -2,6 +2,7 @@
 
 USER_TARGETS   := xdpsock
 BPF_TARGETS    := xdpsock_kern
+EXTRA_DEPS := helpers.h
 
 LDLIBS += -lpthread
 LIB_DIR = ../lib
