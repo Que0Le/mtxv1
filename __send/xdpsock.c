@@ -372,12 +372,14 @@ static void rx_drop(struct xsk_socket_info *xsk)
 
 	rcvd = xsk_ring_cons__peek(&xsk->rx, opt_batch_size, &idx_rx);
 	if (!rcvd) {
+		// printf("0 Here ////////////////////////////////\n");
 		if (opt_busy_poll || xsk_ring_prod__needs_wakeup(&xsk->umem->fq)) {
 			xsk->app_stats.rx_empty_polls++;
 			recvfrom(xsk_socket__fd(xsk->xsk), NULL, 0, MSG_DONTWAIT, NULL, NULL);
 		}
 		return;
 	}
+	printf("1 Here ////////////////////////////////\n");
 
 	ret = xsk_ring_prod__reserve(&xsk->umem->fq, rcvd, &idx_fq);
 	while (ret != rcvd) {
@@ -389,6 +391,7 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		}
 		ret = xsk_ring_prod__reserve(&xsk->umem->fq, rcvd, &idx_fq);
 	}
+	printf("2 Here ////////////////////////////////\n");
 
 	for (i = 0; i < rcvd; i++) {
 		u64 addr = xsk_ring_cons__rx_desc(&xsk->rx, idx_rx)->addr;
@@ -398,9 +401,12 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		addr = xsk_umem__add_offset_to_addr(addr);
 		char *pkt = xsk_umem__get_data(xsk->umem->buffer, addr);
 
+		process_rx_packet(pkt, len);
 		hex_dump(pkt, len, addr);
 		*xsk_ring_prod__fill_addr(&xsk->umem->fq, idx_fq++) = orig;
 	}
+		printf("3 Here ////////////////////////////////\n");
+
 
 	xsk_ring_prod__submit(&xsk->umem->fq, rcvd);
 	xsk_ring_cons__release(&xsk->rx, rcvd);
@@ -575,84 +581,84 @@ static void tx_only_all(void)
 }
 
 
-// static void load_xdp_program(const char* xdp_prog_name, const char* if_name)
-// {
-// 	char errmsg[STRERR_BUFSIZE];
-// 	int err;
-// 	int if_index = if_nametoindex(if_name);
-// 	if (!if_index)
-// 		return;
-// 	if (!xdp_prog_name)
-// 		xdp_prog_name = "xdpsock_kern.o";
-// 	printf("# loading %s program to device %d %s\n", xdp_prog_name, if_index, if_name);
-// 	xdp_prog = xdp_program__open_file(xdp_prog_name, NULL, NULL);
-// 	err = libxdp_get_error(xdp_prog);
-// 	if (err) {
-// 		libxdp_strerror(err, errmsg, sizeof(errmsg));
-// 		fprintf(stderr, "ERROR: program loading failed: %s\n", errmsg);
-// 		exit(EXIT_FAILURE);
-// 	}
+static void load_xdp_program(char* xdp_prog_name, const char* if_name)
+{
+	char errmsg[STRERR_BUFSIZE];
+	int err;
+	int if_index = if_nametoindex(if_name);
+	if (!if_index)
+		return;
+	if (!xdp_prog_name)
+		xdp_prog_name = "xdpsock_kern.o";
+	printf("# loading %s program to device %d %s\n", xdp_prog_name, if_index, if_name);
+	xdp_prog = xdp_program__open_file(xdp_prog_name, "xdp_sock", NULL);
+	err = libxdp_get_error(xdp_prog);
+	if (err) {
+		libxdp_strerror(err, errmsg, sizeof(errmsg));
+		fprintf(stderr, "ERROR: program loading failed: %s\n", errmsg);
+		exit(EXIT_FAILURE);
+	}
 
-// 	err = xdp_program__attach(xdp_prog, if_index, opt_attach_mode, 0);
-// 	if (err) {
-// 		libxdp_strerror(err, errmsg, sizeof(errmsg));
-// 		fprintf(stderr, "ERROR: attaching program failed: %s\n", errmsg);
-// 		exit(EXIT_FAILURE);
-// 	}
-// }
+	err = xdp_program__attach(xdp_prog, if_index, opt_attach_mode, 0);
+	if (err) {
+		libxdp_strerror(err, errmsg, sizeof(errmsg));
+		fprintf(stderr, "ERROR: attaching program failed: %s\n", errmsg);
+		exit(EXIT_FAILURE);
+	}
+}
 
-// static int lookup_bpf_map(int prog_fd)
-// {
-// 	__u32 i, *map_ids, num_maps, prog_len = sizeof(struct bpf_prog_info);
-// 	__u32 map_len = sizeof(struct bpf_map_info);
-// 	struct bpf_prog_info prog_info = {};
-// 	int fd, err, xsks_map_fd = -ENOENT;
-// 	struct bpf_map_info map_info;
+static int lookup_bpf_map(int prog_fd)
+{
+	__u32 i, *map_ids, num_maps, prog_len = sizeof(struct bpf_prog_info);
+	__u32 map_len = sizeof(struct bpf_map_info);
+	struct bpf_prog_info prog_info = {};
+	int fd, err, xsks_map_fd = -ENOENT;
+	struct bpf_map_info map_info;
 
-// 	err = bpf_obj_get_info_by_fd(prog_fd, &prog_info, &prog_len);
-// 	if (err)
-// 		return err;
+	err = bpf_obj_get_info_by_fd(prog_fd, &prog_info, &prog_len);
+	if (err)
+		return err;
 
-// 	num_maps = prog_info.nr_map_ids;
+	num_maps = prog_info.nr_map_ids;
 
-// 	map_ids = calloc(prog_info.nr_map_ids, sizeof(*map_ids));
-// 	if (!map_ids)
-// 		return -ENOMEM;
+	map_ids = calloc(prog_info.nr_map_ids, sizeof(*map_ids));
+	if (!map_ids)
+		return -ENOMEM;
 
-// 	memset(&prog_info, 0, prog_len);
-// 	prog_info.nr_map_ids = num_maps;
-// 	prog_info.map_ids = (__u64)(unsigned long)map_ids;
+	memset(&prog_info, 0, prog_len);
+	prog_info.nr_map_ids = num_maps;
+	prog_info.map_ids = (__u64)(unsigned long)map_ids;
 
-// 	err = bpf_obj_get_info_by_fd(prog_fd, &prog_info, &prog_len);
-// 	if (err) {
-// 		free(map_ids);
-// 		return err;
-// 	}
+	err = bpf_obj_get_info_by_fd(prog_fd, &prog_info, &prog_len);
+	if (err) {
+		free(map_ids);
+		return err;
+	}
 
-// 	for (i = 0; i < prog_info.nr_map_ids; i++) {
-// 		fd = bpf_map_get_fd_by_id(map_ids[i]);
-// 		if (fd < 0)
-// 			continue;
+	for (i = 0; i < prog_info.nr_map_ids; i++) {
+		fd = bpf_map_get_fd_by_id(map_ids[i]);
+		if (fd < 0)
+			continue;
 
-// 		memset(&map_info, 0, map_len);
-// 		err = bpf_obj_get_info_by_fd(fd, &map_info, &map_len);
-// 		if (err) {
-// 			close(fd);
-// 			continue;
-// 		}
+		memset(&map_info, 0, map_len);
+		err = bpf_obj_get_info_by_fd(fd, &map_info, &map_len);
+		if (err) {
+			close(fd);
+			continue;
+		}
 
-// 		if (!strncmp(map_info.name, "xsks_map", sizeof(map_info.name)) &&
-// 		    map_info.key_size == 4 && map_info.value_size == 4) {
-// 			xsks_map_fd = fd;
-// 			break;
-// 		}
+		if (!strncmp(map_info.name, "xsks_map", sizeof(map_info.name)) &&
+		    map_info.key_size == 4 && map_info.value_size == 4) {
+			xsks_map_fd = fd;
+			break;
+		}
 
-// 		close(fd);
-// 	}
+		close(fd);
+	}
 
-// 	free(map_ids);
-// 	return xsks_map_fd;
-// }
+	free(map_ids);
+	return xsks_map_fd;
+}
 
 // static void enter_xsks_into_map(void)
 // {
@@ -768,6 +774,31 @@ static void apply_setsockopt(struct xsk_socket_info *xsk)
 // 	return 0;
 // }
 
+// struct thread_data {
+// 	int socket_th;
+// };
+
+// static void *tx_func(void *arg)
+// {
+// 	// struct thread_data *t = arg;
+// 	while (!benchmark_done) {
+// 		printf("tx sleeping ...\n");
+// 		sleep(1);
+// 	}
+// 	return NULL;
+// }
+
+// static void *rx_func(void *arg)
+// {
+// 	// struct thread_data *t = arg;
+// 	while (!benchmark_done) {
+// 		printf("rx sleeping ...\n");
+// 		sleep(1);
+// 	}
+// 	return NULL;
+// }
+
+
 int main(int argc, char **argv)
 {
 	struct __user_cap_header_struct hdr = { _LINUX_CAPABILITY_VERSION_3, 0 };
@@ -778,7 +809,7 @@ int main(int argc, char **argv)
 	// struct xsk_umem_info *umem;
 	// int xsks_map_fd = 0;
 	pthread_t pt;
-	int i, ret;
+	int ret;
 	// void *bufs;
 
 	parse_command_line(argc, argv);
@@ -817,11 +848,13 @@ int main(int argc, char **argv)
 	ether_aton_r("00:07:32:74:dc:91", &d_mac_addrs[2]);
 
 	opt_num_xsks = 2;
-	for (int s_th = 0; s_th < 2; s_th++) {
+	void *all_bufs[opt_num_xsks];
+	for (int s_th = 0; s_th < opt_num_xsks; s_th++) {
 		struct xsk_umem_info *umem;
 		void *bufs;
-		printf("# Setting up XDP socket on device %d %s\n", if_nametoindex(if_names[s_th]), if_names[s_th]);
-		// load_xdp_program(NULL, if_names[s_th]);
+		printf("# Setting up XDP socket on device %d %s\n", 
+					if_nametoindex(if_names[s_th]), if_names[s_th]);
+		// load_xdp_program("xdpsock_kern.o", if_names[s_th]);
 		/* Reserve memory for the umem. Use hugepages if unaligned chunk mode */
 		bufs = mmap(NULL, NUM_FRAMES * opt_xsk_frame_size,
 				PROT_READ | PROT_WRITE,
@@ -830,6 +863,7 @@ int main(int argc, char **argv)
 			printf("ERROR: mmap failed\n");
 			exit(EXIT_FAILURE);
 		}
+		all_bufs[s_th] = bufs;
 
 		/* Create sockets... */
 		umem = xsk_configure_umem(bufs, NUM_FRAMES * opt_xsk_frame_size);
@@ -846,11 +880,6 @@ int main(int argc, char **argv)
 		if (opt_bench == BENCH_TXONLY) {
 			if (opt_tstamp && opt_pkt_size < PKTGEN_SIZE_MIN)
 				opt_pkt_size = PKTGEN_SIZE_MIN;
-
-			gen_eth_hdr_data();
-
-			for (i = 0; i < NUM_FRAMES; i++)
-				gen_eth_frame(umem, i * opt_xsk_frame_size);
 		}
 	}
 
@@ -879,24 +908,56 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	if (opt_bench == BENCH_RXDROP)
+	/*  */
+	// int status;
+	// static pthread_t tx_thread;
+	// static pthread_t rx_thread;
+	// status = pthread_create(&tx_thread, NULL, tx_func, NULL);
+	// if (status)
+	// {
+	// 	printf("Thread tx_thread creation failed.\n");
+	// 	goto out;
+	// }
+	// printf("# Thread tx created.\n");
+	// status = pthread_create(&rx_thread, NULL, rx_func, NULL);
+	// if (status)
+	// {
+	// 	printf("Thread rx_thread creation failed.\n");
+	// 	goto out;
+	// }
+	// printf("# Thread rx created.\n");
+
+	if (opt_bench == BENCH_RXDROP) {
+		printf("Dropping only ...\n");
 		rx_drop_all();
-	else if (opt_bench == BENCH_TXONLY)
+	}
+	else if (opt_bench == BENCH_TXONLY) {
+		printf("TXing only ...\n");
 		tx_only_all();
+	}
 	// else
 	// 	l2fwd_all();
+
 
 out:
 	benchmark_done = true;
 	printf("\n# OUT. Cleaning up ...\n");
 	if (!opt_quiet)
 		pthread_join(pt, NULL);
-
-	xdpsock_cleanup();
+	// wait for rx and tx thread to complete
+	// pthread_join(tx_thread, NULL);
+	// pthread_join(rx_thread, NULL);
+	//
 	for (int i = 0; i < num_socks; i++) {
-		printf("-- removing xdp program on device %d %s\n", if_nametoindex(if_names[i]), if_names[i]);
-		remove_xdp_program(if_nametoindex(if_names[i]));
+		printf("-- Clean xdp socket on device %d %s\n", 
+					if_nametoindex(if_names[i]), if_names[i]);
+		xdpsock_cleanup_index(i);
+		munmap(all_bufs[i], NUM_FRAMES * opt_xsk_frame_size);
+		
+		// xdpsock_cleanup();
+		// remove_xdp_program(if_nametoindex(if_names[i]));
 	}
+
 	// TODO: munmap
 	// munmap(bufs, NUM_FRAMES * opt_xsk_frame_size);
 

@@ -41,6 +41,18 @@
 #include <bpf/bpf.h>
 #include "xdpsock.h"
 
+
+char* if_names[3] = {"enp2s0", "enp5s0", "enp7s0"};
+//10.10.2.11, 10.10.5.11, 10.10.7.11 
+uint32_t s_ip_addrs[3] = {0xa0a020b, 0xa0a050b, 0xa0a070b}; 
+//10.10.2.22, 10.10.5.22, 10.10.7.22 
+uint32_t d_ip_addrs[3] = {0xa0a0216, 0xa0a0516, 0xa0a0716}; 
+struct ether_addr s_mac_addrs[3];
+struct ether_addr d_mac_addrs[3];
+
+int current_pkt = 0;
+
+
 #ifndef SOL_XDP
 #define SOL_XDP 283
 #endif
@@ -622,6 +634,27 @@ static void xdpsock_cleanup(void)
 		remove_xdp_program(opt_ifindex);    // TODO: fix this. need more cleanup
 }
 
+/* Clean up xdp socket at index i */
+static void xdpsock_cleanup_index(int index)
+{
+	struct xsk_umem *umem = xsks[index]->umem->umem;
+	// int i, cmd = CLOSE_CONN;
+
+	dump_stats();
+	// for (i = 0; i < num_socks; i++)
+    xsk_socket__delete(xsks[index]->xsk);
+	(void)xsk_umem__delete(umem);
+
+	// if (opt_reduced_cap) {
+	// 	if (write(sock, &cmd, sizeof(int)) < 0)
+	// 		exit_with_error(errno);
+	// }
+
+	// if (opt_num_xsks > 1)
+    remove_xdp_program(if_nametoindex(if_names[index]));   
+    // TODO: fix this. might not need it here
+}
+
 // static void swap_mac_addresses(void *data)
 // {
 // 	struct ether_header *eth = (struct ether_header *)data;
@@ -999,7 +1032,7 @@ static void xsk_populate_fill_ring(struct xsk_umem_info *umem)
 }
 
 static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem,
-						    bool rx, bool tx, const char *test_if)
+						    bool rx, bool tx, const char *if_name)
 {
 	struct xsk_socket_config cfg;
 	struct xsk_socket_info *xsk;
@@ -1026,8 +1059,8 @@ static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem,
 
 	rxr = rx ? &xsk->rx : NULL;
 	txr = tx ? &xsk->tx : NULL;
-	printf("# Configurating xsk for interface: %s\n", test_if);
-	ret = xsk_socket__create(&xsk->xsk, test_if, opt_queue, umem->umem,
+	printf("# Configurating xsk for interface: %s on queue %d\n", if_name, opt_queue);
+	ret = xsk_socket__create(&xsk->xsk, if_name, opt_queue, umem->umem,
 				 rxr, txr, &cfg);
 	if (ret)
 		exit_with_error(-ret);
@@ -1045,18 +1078,6 @@ static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem,
 
 	return xsk;
 }
-
-
-
-char* if_names[3] = {"enp2s0", "enp5s0", "enp7s0"};
-//10.10.2.11, 10.10.5.11, 10.10.7.11 
-uint32_t s_ip_addrs[3] = {0xa0a020b, 0xa0a050b, 0xa0a070b}; 
-//10.10.2.22, 10.10.5.22, 10.10.7.22 
-uint32_t d_ip_addrs[3] = {0xa0a0216, 0xa0a0516, 0xa0a0716}; 
-struct ether_addr s_mac_addrs[3];
-struct ether_addr d_mac_addrs[3];
-
-int current_pkt = 0;
 
 
 static void create_custom_udp_packet(int socket_th, char * pkt_data, 
@@ -1121,4 +1142,76 @@ static void create_custom_udp_packet(int socket_th, char * pkt_data,
 
 	// memcpy(xsk_umem__get_data(umem->buffer, addr), pkt_data,
 	// 	PKT_SIZE);
+}
+
+void print_hex(const char *string, int len)
+{
+        unsigned char *p = (unsigned char *) string;
+
+        for (int i=0; i < len; ++i) {
+                if (! (i % 16) && i)
+                        printf("\n");
+
+                printf("0x%02x ", p[i]);
+        }
+        printf("\n\n");
+}
+
+#include <arpa/inet.h>
+#include <net/if.h>
+#include <linux/if_link.h>
+#include <linux/if_ether.h>
+#include <linux/ipv6.h>
+#include <linux/icmpv6.h>
+static bool process_rx_packet(char *pkt, uint32_t len)
+{
+
+    // int ret;
+    // uint32_t tx_idx = 0;
+    // uint8_t tmp_mac[ETH_ALEN];
+    // struct in6_addr tmp_ip;
+    // struct ethhdr *eth = (struct ethhdr *) pkt;
+    // struct ipv6hdr *ipv6 = (struct ipv6hdr *) (eth + 1);
+    // struct icmp6hdr *icmp = (struct icmp6hdr *) (ipv6 + 1);
+	// struct iphdr *ip_hdr = (struct iphdr *) (eth + sizeof(*eth));
+    // struct udphdr *udp_hdr = (struct udphdr *) (ip_hdr + sizeof(*ip_hdr));
+	// int i = 0;
+	// for (i=0; i<len; i++) {
+	// 	printf("0x%02x ", pkt+i);
+	// }
+	// printf("\n");
+	print_hex(pkt, len);
+	bool is_ip, is_udp, is_len;
+	struct ethhdr *eth_hdr = (struct ethhdr *)pkt;
+	struct iphdr *ip_hdr = (struct iphdr *)(pkt +
+					sizeof(struct ethhdr));
+	struct udphdr *udp_hdr = (struct udphdr *)(pkt +
+					sizeof(struct ethhdr) +
+					sizeof(struct iphdr));
+
+	// printf("%d\n", (sizeof(*eth_hdr) + sizeof(*ip_hdr) + sizeof(*udp_hdr)));
+	if (ntohs(eth_hdr->h_proto) == ETH_P_IP)
+		is_ip = true;
+	if (len >= (sizeof(*eth_hdr) + sizeof(*ip_hdr) + sizeof(*udp_hdr)))
+		is_len = true;
+	if (ip_hdr->protocol == IPPROTO_UDP)
+		is_udp = true;
+	if (!(is_ip && is_len && is_udp)) {
+	printf("pkt test: is_ip %d is_len %d is_udp %d\n",  is_ip, is_udp, is_len);
+		return false;
+	}
+    // if (ntohs(eth->h_proto) != ETH_P_IP ||
+    //     len < (sizeof(*eth) + sizeof(*ip_hdr) + sizeof(*udp_hdr))  ||
+    //     ip_hdr->protocol != IPPROTO_UDP)
+    //     return false;
+	printf("IP: src(%d) dest(%d)\n", ntohl(ip_hdr->saddr), ntohl(ip_hdr->daddr));
+	printf("len %d src %d dest %d  udp_hdr->len %d\n", len, 
+		ntohs(udp_hdr->source), (udp_hdr->dest), 
+		ntohs(udp_hdr->len));
+    char buff[100];
+    memcpy(buff, (char *) udp_hdr+sizeof(struct udphdr), 18/* udp_hdr->len - sizeof(udp_hdr) */);
+    buff[99] = '\0';
+    printf("pkt (%ld bytes): %s\n", 
+		ntohs(udp_hdr->len) - sizeof(struct udphdr), buff);
+    return true;
 }
