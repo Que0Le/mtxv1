@@ -379,7 +379,7 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		}
 		return;
 	}
-	printf("1 Here ////////////////////////////////\n");
+	// printf("1 Here ////////////////////////////////\n");
 
 	ret = xsk_ring_prod__reserve(&xsk->umem->fq, rcvd, &idx_fq);
 	while (ret != rcvd) {
@@ -391,7 +391,7 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		}
 		ret = xsk_ring_prod__reserve(&xsk->umem->fq, rcvd, &idx_fq);
 	}
-	printf("2 Here ////////////////////////////////\n");
+	// printf("2 Here ////////////////////////////////\n");
 
 	for (i = 0; i < rcvd; i++) {
 		u64 addr = xsk_ring_cons__rx_desc(&xsk->rx, idx_rx)->addr;
@@ -405,7 +405,7 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		hex_dump(pkt, len, addr);
 		*xsk_ring_prod__fill_addr(&xsk->umem->fq, idx_fq++) = orig;
 	}
-		printf("3 Here ////////////////////////////////\n");
+		// printf("3 Here ////////////////////////////////\n");
 
 
 	xsk_ring_prod__submit(&xsk->umem->fq, rcvd);
@@ -847,6 +847,11 @@ int main(int argc, char **argv)
 	ether_aton_r("00:07:32:74:dc:90", &d_mac_addrs[1]);
 	ether_aton_r("00:07:32:74:dc:91", &d_mac_addrs[2]);
 
+	if (opt_bench == BENCH_TXONLY) {
+		if (opt_tstamp && opt_pkt_size < PKTGEN_SIZE_MIN)
+			opt_pkt_size = PKTGEN_SIZE_MIN;
+	}
+
 	opt_num_xsks = 2;
 	void *all_bufs[opt_num_xsks];
 	for (int s_th = 0; s_th < opt_num_xsks; s_th++) {
@@ -854,7 +859,6 @@ int main(int argc, char **argv)
 		void *bufs;
 		printf("# Setting up XDP socket on device %d %s\n", 
 					if_nametoindex(if_names[s_th]), if_names[s_th]);
-		// load_xdp_program("xdpsock_kern.o", if_names[s_th]);
 		/* Reserve memory for the umem. Use hugepages if unaligned chunk mode */
 		bufs = mmap(NULL, NUM_FRAMES * opt_xsk_frame_size,
 				PROT_READ | PROT_WRITE,
@@ -866,6 +870,9 @@ int main(int argc, char **argv)
 		all_bufs[s_th] = bufs;
 
 		/* Create sockets... */
+		// load_xdp_program("xdpsock_kern.o", if_names[s_th]);
+		struct xdp_program *xdp_prog_temp = load_and_return_xdp_program("xdpsock_kern.o", if_names[s_th]);
+
 		umem = xsk_configure_umem(bufs, NUM_FRAMES * opt_xsk_frame_size);
 		if (opt_bench == BENCH_RXDROP || opt_bench == BENCH_L2FWD) {
 			rx = true;
@@ -877,10 +884,23 @@ int main(int argc, char **argv)
 		num_socks++;
 		apply_setsockopt(xsks[s_th]);
 
-		if (opt_bench == BENCH_TXONLY) {
-			if (opt_tstamp && opt_pkt_size < PKTGEN_SIZE_MIN)
-				opt_pkt_size = PKTGEN_SIZE_MIN;
+		/* Set up custom map of our bpf program */
+		int xsks_map;
+		xsks_map = lookup_bpf_map(xdp_program__fd(xdp_prog_temp));
+		printf("xsks_map: %d\n", xsks_map);
+		if (xsks_map < 0) {
+			fprintf(stderr, "ERROR: no xsks map found: %s\n",
+				strerror(xsks_map));
+				exit(EXIT_FAILURE);
 		}
+		int fd = xsk_socket__fd(xsks[s_th]->xsk);
+		ret = bpf_map_update_elem(xsks_map, &s_th, &fd, 0);
+		if (ret) {
+			fprintf(stderr, "ERROR: bpf_map_update_elem for s_th %d\n", s_th);
+			// exit(EXIT_FAILURE);
+			goto out;
+		}
+		/*  */
 	}
 
 	signal(SIGINT, int_exit);

@@ -1051,6 +1051,11 @@ static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem,
 		cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
 	else
 		cfg.libxdp_flags = 0;
+    /* Testing not load xdp proram */
+    // TODO: this need to be configurable!
+    cfg.libxdp_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
+    cfg.libbpf_flags = XSK_LIBXDP_FLAGS__INHIBIT_PROG_LOAD;
+    /* End testing */
 	if (opt_attach_mode == XDP_MODE_SKB)
 		cfg.xdp_flags = XDP_FLAGS_SKB_MODE;
 	else
@@ -1180,7 +1185,7 @@ static bool process_rx_packet(char *pkt, uint32_t len)
 	// 	printf("0x%02x ", pkt+i);
 	// }
 	// printf("\n");
-	print_hex(pkt, len);
+	// print_hex(pkt, len);
 	bool is_ip, is_udp, is_len;
 	struct ethhdr *eth_hdr = (struct ethhdr *)pkt;
 	struct iphdr *ip_hdr = (struct iphdr *)(pkt +
@@ -1211,7 +1216,39 @@ static bool process_rx_packet(char *pkt, uint32_t len)
     char buff[100];
     memcpy(buff, (char *) udp_hdr+sizeof(struct udphdr), 18/* udp_hdr->len - sizeof(udp_hdr) */);
     buff[99] = '\0';
-    printf("pkt (%ld bytes): %s\n", 
+    printf("pkt (%ld bytes): '''%s'''\n", 
 		ntohs(udp_hdr->len) - sizeof(struct udphdr), buff);
     return true;
 }
+
+
+
+
+struct xdp_program* load_and_return_xdp_program(char* xdp_prog_name, const char* if_name)
+{
+	char errmsg[STRERR_BUFSIZE];
+	int err;
+	int if_index = if_nametoindex(if_name);
+	if (!if_index)
+		return;
+	if (!xdp_prog_name)
+		xdp_prog_name = "xdpsock_kern.o";
+	printf("# loading %s program to device %d %s\n", xdp_prog_name, if_index, if_name);
+	xdp_prog = xdp_program__open_file(xdp_prog_name, "xdp_sock", NULL);
+	err = libxdp_get_error(xdp_prog);
+	if (err) {
+		libxdp_strerror(err, errmsg, sizeof(errmsg));
+		fprintf(stderr, "ERROR: program loading failed: %s\n", errmsg);
+		exit(EXIT_FAILURE);
+	}
+
+	err = xdp_program__attach(xdp_prog, if_index, opt_attach_mode, 0);
+	if (err) {
+		libxdp_strerror(err, errmsg, sizeof(errmsg));
+		fprintf(stderr, "ERROR: attaching program failed: %s\n", errmsg);
+		exit(EXIT_FAILURE);
+	}
+
+    return xdp_prog;
+}
+
