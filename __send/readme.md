@@ -66,6 +66,7 @@ sudo kill -9 "$(pgrep send_user)"
 
 
 ```bash
+# Run after reboot, since iptable will not store these permanently
 sudo iptables -A FORWARD -o wlp3s0 -i enx00e04c03f3b8 -s 192.168.0.0/24 -m conntrack --ctstate NEW -j ACCEPT
 sudo iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 sudo iptables -t nat -F POSTROUTING
@@ -76,8 +77,11 @@ sudo iptables -t nat -A POSTROUTING -o wlp3s0 -j MASQUERADE
 # sudo iptables -A FORWARD -i enx00e04c03f3b8 -o wlp3s0 -m state --state RELATED,ESTABLISHED -j ACCEPT
 
 # sudo iptables -A FORWARD -i wlp3s0 -o enx00e04c03f3b8 -j ACCEPT
+
+# Check sharing status with  cat /proc/sys/net/ipv4/ip_forward
 sudo nano /etc/sysctl.conf
-# net.ipv4.ip_forward=1
+# Add this: net.ipv4.ip_forward=1
+# Or do this: sudo sysctl -w net.ipv4.ip_forward=1
 sudo sysctl -p
 
 ### Client

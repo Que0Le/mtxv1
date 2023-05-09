@@ -871,7 +871,7 @@ int main(int argc, char **argv)
 
 		/* Create sockets... */
 		// load_xdp_program("xdpsock_kern.o", if_names[s_th]);
-		struct xdp_program *xdp_prog_temp = load_and_return_xdp_program("xdpsock_kern.o", if_names[s_th]);
+		xdp_progs[s_th] = load_and_return_xdp_program("xdpsock_kern.o", if_names[s_th]);
 
 		umem = xsk_configure_umem(bufs, NUM_FRAMES * opt_xsk_frame_size);
 		if (opt_bench == BENCH_RXDROP || opt_bench == BENCH_L2FWD) {
@@ -886,7 +886,7 @@ int main(int argc, char **argv)
 
 		/* Set up custom map of our bpf program */
 		int xsks_map;
-		xsks_map = lookup_bpf_map(xdp_program__fd(xdp_prog_temp));
+		xsks_map = lookup_bpf_map(xdp_program__fd(xdp_progs[s_th]));
 		printf("xsks_map: %d\n", xsks_map);
 		if (xsks_map < 0) {
 			fprintf(stderr, "ERROR: no xsks map found: %s\n",

@@ -49,7 +49,7 @@ uint32_t s_ip_addrs[3] = {0xa0a020b, 0xa0a050b, 0xa0a070b};
 uint32_t d_ip_addrs[3] = {0xa0a0216, 0xa0a0516, 0xa0a0716}; 
 struct ether_addr s_mac_addrs[3];
 struct ether_addr d_mac_addrs[3];
-
+struct xdp_program *xdp_progs[3];
 int current_pkt = 0;
 
 
@@ -597,6 +597,16 @@ static void remove_xdp_program(int if_index)
 		fprintf(stderr, "Could not detach XDP program. Error: %s\n", strerror(-err));
 }
 
+static void remove_xdp_program_at_index(int socket_th)
+{
+	int err;
+
+	err = xdp_program__detach(xdp_progs[socket_th], 
+			if_nametoindex(if_names[socket_th]), opt_attach_mode, 0);
+	if (err)
+		fprintf(stderr, "Could not detach XDP program. Error: %s\n", strerror(-err));
+}
+
 static void int_exit(int sig)
 {
 	benchmark_done = true;
@@ -615,24 +625,24 @@ static void __exit_with_error(int error, const char *file, const char *func,
 
 #define exit_with_error(error) __exit_with_error(error, __FILE__, __func__, __LINE__)
 
-static void xdpsock_cleanup(void)
-{
-	struct xsk_umem *umem = xsks[0]->umem->umem;
-	int i, cmd = CLOSE_CONN;
+// static void xdpsock_cleanup(void)
+// {
+// 	struct xsk_umem *umem = xsks[0]->umem->umem;
+// 	int i, cmd = CLOSE_CONN;
 
-	dump_stats();
-	for (i = 0; i < num_socks; i++)
-		xsk_socket__delete(xsks[i]->xsk);
-	(void)xsk_umem__delete(umem);
+// 	dump_stats();
+// 	for (i = 0; i < num_socks; i++)
+// 		xsk_socket__delete(xsks[i]->xsk);
+// 	(void)xsk_umem__delete(umem);
 
-	if (opt_reduced_cap) {
-		if (write(sock, &cmd, sizeof(int)) < 0)
-			exit_with_error(errno);
-	}
+// 	if (opt_reduced_cap) {
+// 		if (write(sock, &cmd, sizeof(int)) < 0)
+// 			exit_with_error(errno);
+// 	}
 
-	if (opt_num_xsks > 1)
-		remove_xdp_program(opt_ifindex);    // TODO: fix this. need more cleanup
-}
+// 	if (opt_num_xsks > 1)
+// 		remove_xdp_program(opt_ifindex);    // TODO: fix this. need more cleanup
+// }
 
 /* Clean up xdp socket at index i */
 static void xdpsock_cleanup_index(int index)
@@ -651,7 +661,8 @@ static void xdpsock_cleanup_index(int index)
 	// }
 
 	// if (opt_num_xsks > 1)
-    remove_xdp_program(if_nametoindex(if_names[index]));   
+	printf("-- Removing bpf program ...\n");
+    remove_xdp_program_at_index(index);   
     // TODO: fix this. might not need it here
 }
 
