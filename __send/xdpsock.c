@@ -372,14 +372,12 @@ static void rx_drop(struct xsk_socket_info *xsk)
 
 	rcvd = xsk_ring_cons__peek(&xsk->rx, opt_batch_size, &idx_rx);
 	if (!rcvd) {
-		// printf("0 Here ////////////////////////////////\n");
 		if (opt_busy_poll || xsk_ring_prod__needs_wakeup(&xsk->umem->fq)) {
 			xsk->app_stats.rx_empty_polls++;
 			recvfrom(xsk_socket__fd(xsk->xsk), NULL, 0, MSG_DONTWAIT, NULL, NULL);
 		}
 		return;
 	}
-	// printf("1 Here ////////////////////////////////\n");
 
 	ret = xsk_ring_prod__reserve(&xsk->umem->fq, rcvd, &idx_fq);
 	while (ret != rcvd) {
@@ -391,7 +389,6 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		}
 		ret = xsk_ring_prod__reserve(&xsk->umem->fq, rcvd, &idx_fq);
 	}
-	// printf("2 Here ////////////////////////////////\n");
 
 	for (i = 0; i < rcvd; i++) {
 		u64 addr = xsk_ring_cons__rx_desc(&xsk->rx, idx_rx)->addr;
@@ -405,7 +402,6 @@ static void rx_drop(struct xsk_socket_info *xsk)
 		hex_dump(pkt, len, addr);
 		*xsk_ring_prod__fill_addr(&xsk->umem->fq, idx_fq++) = orig;
 	}
-		// printf("3 Here ////////////////////////////////\n");
 
 
 	xsk_ring_prod__submit(&xsk->umem->fq, rcvd);
@@ -581,32 +577,6 @@ static void tx_only_all(void)
 }
 
 
-static void load_xdp_program(char* xdp_prog_name, const char* if_name)
-{
-	char errmsg[STRERR_BUFSIZE];
-	int err;
-	int if_index = if_nametoindex(if_name);
-	if (!if_index)
-		return;
-	if (!xdp_prog_name)
-		xdp_prog_name = "xdpsock_kern.o";
-	printf("# loading %s program to device %d %s\n", xdp_prog_name, if_index, if_name);
-	xdp_prog = xdp_program__open_file(xdp_prog_name, "xdp_sock", NULL);
-	err = libxdp_get_error(xdp_prog);
-	if (err) {
-		libxdp_strerror(err, errmsg, sizeof(errmsg));
-		fprintf(stderr, "ERROR: program loading failed: %s\n", errmsg);
-		exit(EXIT_FAILURE);
-	}
-
-	err = xdp_program__attach(xdp_prog, if_index, opt_attach_mode, 0);
-	if (err) {
-		libxdp_strerror(err, errmsg, sizeof(errmsg));
-		fprintf(stderr, "ERROR: attaching program failed: %s\n", errmsg);
-		exit(EXIT_FAILURE);
-	}
-}
-
 static int lookup_bpf_map(int prog_fd)
 {
 	__u32 i, *map_ids, num_maps, prog_len = sizeof(struct bpf_prog_info);
@@ -660,29 +630,6 @@ static int lookup_bpf_map(int prog_fd)
 	return xsks_map_fd;
 }
 
-// static void enter_xsks_into_map(void)
-// {
-// 	int i, xsks_map;
-
-// 	xsks_map = lookup_bpf_map(xdp_program__fd(xdp_prog));
-// 	if (xsks_map < 0) {
-// 		fprintf(stderr, "ERROR: no xsks map found: %s\n",
-// 			strerror(xsks_map));
-// 			exit(EXIT_FAILURE);
-// 	}
-
-// 	for (i = 0; i < num_socks; i++) {
-// 		int fd = xsk_socket__fd(xsks[i]->xsk);
-// 		int key, ret;
-
-// 		key = i;
-// 		ret = bpf_map_update_elem(xsks_map, &key, &fd, 0);
-// 		if (ret) {
-// 			fprintf(stderr, "ERROR: bpf_map_update_elem %d\n", i);
-// 			exit(EXIT_FAILURE);
-// 		}
-// 	}
-// }
 
 static void apply_setsockopt(struct xsk_socket_info *xsk)
 {
@@ -706,73 +653,6 @@ static void apply_setsockopt(struct xsk_socket_info *xsk)
 		       (void *)&sock_opt, sizeof(sock_opt)) < 0)
 		exit_with_error(errno);
 }
-
-// static int recv_xsks_map_fd_from_ctrl_node(int sock, int *_fd)
-// {
-// 	char cms[CMSG_SPACE(sizeof(int))];
-// 	struct cmsghdr *cmsg;
-// 	struct msghdr msg;
-// 	struct iovec iov;
-// 	int value;
-// 	int len;
-
-// 	iov.iov_base = &value;
-// 	iov.iov_len = sizeof(int);
-
-// 	msg.msg_name = 0;
-// 	msg.msg_namelen = 0;
-// 	msg.msg_iov = &iov;
-// 	msg.msg_iovlen = 1;
-// 	msg.msg_flags = 0;
-// 	msg.msg_control = (caddr_t)cms;
-// 	msg.msg_controllen = sizeof(cms);
-
-// 	len = recvmsg(sock, &msg, 0);
-
-// 	if (len < 0) {
-// 		fprintf(stderr, "Recvmsg failed length incorrect.\n");
-// 		return -EINVAL;
-// 	}
-
-// 	if (len == 0) {
-// 		fprintf(stderr, "Recvmsg failed no data\n");
-// 		return -EINVAL;
-// 	}
-
-// 	cmsg = CMSG_FIRSTHDR(&msg);
-// 	*_fd = *(int *)CMSG_DATA(cmsg);
-
-// 	return 0;
-// }
-
-// static int
-// recv_xsks_map_fd(int *xsks_map_fd)
-// {
-// 	struct sockaddr_un server;
-// 	int err;
-
-// 	sock = socket(AF_UNIX, SOCK_STREAM, 0);
-// 	if (sock < 0) {
-// 		fprintf(stderr, "Error opening socket stream: %s", strerror(errno));
-// 		return errno;
-// 	}
-
-// 	server.sun_family = AF_UNIX;
-// 	strcpy(server.sun_path, SOCKET_NAME);
-
-// 	if (connect(sock, (struct sockaddr *)&server, sizeof(struct sockaddr_un)) < 0) {
-// 		close(sock);
-// 		fprintf(stderr, "Error connecting stream socket: %s", strerror(errno));
-// 		return errno;
-// 	}
-
-// 	err = recv_xsks_map_fd_from_ctrl_node(sock, xsks_map_fd);
-// 	if (err) {
-// 		fprintf(stderr, "Error %d receiving fd\n", err);
-// 		return err;
-// 	}
-// 	return 0;
-// }
 
 // struct thread_data {
 // 	int socket_th;
@@ -870,9 +750,6 @@ int main(int argc, char **argv)
 		all_bufs[s_th] = bufs;
 
 		/* Create sockets... */
-		// load_xdp_program("xdpsock_kern.o", if_names[s_th]);
-		xdp_progs[s_th] = load_and_return_xdp_program("xdpsock_kern.o", if_names[s_th]);
-
 		umem = xsk_configure_umem(bufs, NUM_FRAMES * opt_xsk_frame_size);
 		if (opt_bench == BENCH_RXDROP || opt_bench == BENCH_L2FWD) {
 			rx = true;
@@ -886,6 +763,9 @@ int main(int argc, char **argv)
 
 		/* Set up custom map of our bpf program */
 		int xsks_map;
+		xdp_progs[s_th] = load_and_return_xdp_program("xdpsock_kern.o", if_names[s_th]);
+		if (!xdp_progs[s_th])
+			goto out;
 		xsks_map = lookup_bpf_map(xdp_program__fd(xdp_progs[s_th]));
 		printf("xsks_map: %d\n", xsks_map);
 		if (xsks_map < 0) {
@@ -897,7 +777,6 @@ int main(int argc, char **argv)
 		ret = bpf_map_update_elem(xsks_map, &s_th, &fd, 0);
 		if (ret) {
 			fprintf(stderr, "ERROR: bpf_map_update_elem for s_th %d\n", s_th);
-			// exit(EXIT_FAILURE);
 			goto out;
 		}
 		/*  */
@@ -955,9 +834,6 @@ int main(int argc, char **argv)
 		printf("TXing only ...\n");
 		tx_only_all();
 	}
-	// else
-	// 	l2fwd_all();
-
 
 out:
 	benchmark_done = true;
@@ -973,13 +849,7 @@ out:
 					if_nametoindex(if_names[i]), if_names[i]);
 		xdpsock_cleanup_index(i);
 		munmap(all_bufs[i], NUM_FRAMES * opt_xsk_frame_size);
-		
-		// xdpsock_cleanup();
-		// remove_xdp_program(if_nametoindex(if_names[i]));
 	}
-
-	// TODO: munmap
-	// munmap(bufs, NUM_FRAMES * opt_xsk_frame_size);
 
 	return 0;
 }

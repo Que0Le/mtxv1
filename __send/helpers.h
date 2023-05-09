@@ -588,14 +588,14 @@ static void *poller(void *arg)
 	return NULL;
 }
 
-static void remove_xdp_program(int if_index)
-{
-	int err;
+// static void remove_xdp_program(int if_index)
+// {
+// 	int err;
 
-	err = xdp_program__detach(xdp_prog, if_index, opt_attach_mode, 0);
-	if (err)
-		fprintf(stderr, "Could not detach XDP program. Error: %s\n", strerror(-err));
-}
+// 	err = xdp_program__detach(xdp_prog, if_index, opt_attach_mode, 0);
+// 	if (err)
+// 		fprintf(stderr, "Could not detach XDP program. Error: %s\n", strerror(-err));
+// }
 
 static void remove_xdp_program_at_index(int socket_th)
 {
@@ -618,8 +618,13 @@ static void __exit_with_error(int error, const char *file, const char *func,
 	fprintf(stderr, "%s:%s:%i: errno: %d/\"%s\"\n", file, func,
 		line, error, strerror(error));
 
-	if (opt_num_xsks > 1)
-		remove_xdp_program(opt_ifindex);
+	// if (opt_num_xsks > 1)
+	// 	remove_xdp_program(opt_ifindex);
+	int index;
+	for (index = 0; index < num_socks; index++) {
+		if (xdp_progs[index])
+			remove_xdp_program_at_index(index);
+	}
 	exit(EXIT_FAILURE);
 }
 
@@ -648,22 +653,12 @@ static void __exit_with_error(int error, const char *file, const char *func,
 static void xdpsock_cleanup_index(int index)
 {
 	struct xsk_umem *umem = xsks[index]->umem->umem;
-	// int i, cmd = CLOSE_CONN;
-
 	dump_stats();
-	// for (i = 0; i < num_socks; i++)
     xsk_socket__delete(xsks[index]->xsk);
 	(void)xsk_umem__delete(umem);
-
-	// if (opt_reduced_cap) {
-	// 	if (write(sock, &cmd, sizeof(int)) < 0)
-	// 		exit_with_error(errno);
-	// }
-
-	// if (opt_num_xsks > 1)
 	printf("-- Removing bpf program ...\n");
-    remove_xdp_program_at_index(index);   
-    // TODO: fix this. might not need it here
+	if (xdp_progs[index])
+    	remove_xdp_program_at_index(index);   
 }
 
 // static void swap_mac_addresses(void *data)
@@ -713,21 +708,21 @@ static void hex_dump(void *pkt, size_t length, u64 addr)
 	printf("\n");
 }
 
-static void *memset32_htonl(void *dest, u32 val, u32 size)
-{
-	u32 *ptr = (u32 *)dest;
-	int i;
+// static void *memset32_htonl(void *dest, u32 val, u32 size)
+// {
+// 	u32 *ptr = (u32 *)dest;
+// 	int i;
 
-	val = htonl(val);
+// 	val = htonl(val);
 
-	for (i = 0; i < (size & (~0x3)); i += 4)
-		ptr[i >> 2] = val;
+// 	for (i = 0; i < (size & (~0x3)); i += 4)
+// 		ptr[i >> 2] = val;
 
-	for (; i < size; i++)
-		((char *)dest)[i] = ((char *)&val)[i & 3];
+// 	for (; i < size; i++)
+// 		((char *)dest)[i] = ((char *)&val)[i & 3];
 
-	return dest;
-}
+// 	return dest;
+// }
 
 /*
  * This function code has been taken from
@@ -907,91 +902,6 @@ static inline u16 udp_csum(u32 saddr, u32 daddr, u32 len,
 
 static u8 pkt_data[XSK_UMEM__DEFAULT_FRAME_SIZE];
 
-static void gen_eth_hdr_data(void)
-{
-	struct pktgen_hdr *pktgen_hdr;
-	struct udphdr *udp_hdr;
-	struct iphdr *ip_hdr;
-
-	if (opt_vlan_tag) {
-		struct vlan_ethhdr *veth_hdr = (struct vlan_ethhdr *)pkt_data;
-		u16 vlan_tci = 0;
-
-		udp_hdr = (struct udphdr *)(pkt_data +
-					    sizeof(struct vlan_ethhdr) +
-					    sizeof(struct iphdr));
-		ip_hdr = (struct iphdr *)(pkt_data +
-					  sizeof(struct vlan_ethhdr));
-		pktgen_hdr = (struct pktgen_hdr *)(pkt_data +
-						   sizeof(struct vlan_ethhdr) +
-						   sizeof(struct iphdr) +
-						   sizeof(struct udphdr));
-		/* ethernet & VLAN header */
-		memcpy(veth_hdr->h_dest, &opt_txdmac, ETH_ALEN);
-		memcpy(veth_hdr->h_source, &opt_txsmac, ETH_ALEN);
-		veth_hdr->h_vlan_proto = htons(ETH_P_8021Q);
-		vlan_tci = opt_pkt_vlan_id & VLAN_VID_MASK;
-		vlan_tci |= (opt_pkt_vlan_pri << VLAN_PRIO_SHIFT) & VLAN_PRIO_MASK;
-		veth_hdr->h_vlan_TCI = htons(vlan_tci);
-		veth_hdr->h_vlan_encapsulated_proto = htons(ETH_P_IP);
-	} else {
-		struct ethhdr *eth_hdr = (struct ethhdr *)pkt_data;
-
-		udp_hdr = (struct udphdr *)(pkt_data +
-					    sizeof(struct ethhdr) +
-					    sizeof(struct iphdr));
-		ip_hdr = (struct iphdr *)(pkt_data +
-					  sizeof(struct ethhdr));
-		pktgen_hdr = (struct pktgen_hdr *)(pkt_data +
-						   sizeof(struct ethhdr) +
-						   sizeof(struct iphdr) +
-						   sizeof(struct udphdr));
-		/* ethernet header */
-		memcpy(eth_hdr->h_dest, &opt_txdmac, ETH_ALEN);
-		memcpy(eth_hdr->h_source, &opt_txsmac, ETH_ALEN);
-		eth_hdr->h_proto = htons(ETH_P_IP);
-	}
-
-
-	/* IP header */
-	ip_hdr->version = IPVERSION;
-	ip_hdr->ihl = 0x5; /* 20 byte header */
-	ip_hdr->tos = 0x0;
-	ip_hdr->tot_len = htons(IP_PKT_SIZE);
-	ip_hdr->id = 0;
-	ip_hdr->frag_off = 0;
-	ip_hdr->ttl = IPDEFTTL;
-	ip_hdr->protocol = IPPROTO_UDP;
-	ip_hdr->saddr = htonl(0xc0a87a87); //192.168.122.135
-	ip_hdr->daddr = htonl(0xc0a87a71); //192.168.122.122
-
-	/* IP header checksum */
-	ip_hdr->check = 0;
-	ip_hdr->check = ip_fast_csum((const void *)ip_hdr, ip_hdr->ihl);
-
-	/* UDP header */
-	udp_hdr->source = htons(0x1000);
-	udp_hdr->dest = htons(0x1000);
-	udp_hdr->len = htons(UDP_PKT_SIZE);
-
-	if (opt_tstamp)
-		pktgen_hdr->pgh_magic = htonl(PKTGEN_MAGIC);
-
-	/* UDP data */
-	memset32_htonl(pkt_data + PKT_HDR_SIZE, opt_pkt_fill_pattern,
-		       UDP_PKT_DATA_SIZE);
-
-	/* UDP header checksum */
-	udp_hdr->check = 0;
-	udp_hdr->check = udp_csum(ip_hdr->saddr, ip_hdr->daddr, UDP_PKT_SIZE,
-				  IPPROTO_UDP, (u16 *)udp_hdr);
-}
-
-static void gen_eth_frame(struct xsk_umem_info *umem, u64 addr)
-{
-	memcpy(xsk_umem__get_data(umem->buffer, addr), pkt_data,
-	       PKT_SIZE);
-}
 
 static struct xsk_umem_info *xsk_configure_umem(void *buffer, u64 size)
 {
@@ -1181,22 +1091,6 @@ void print_hex(const char *string, int len)
 #include <linux/icmpv6.h>
 static bool process_rx_packet(char *pkt, uint32_t len)
 {
-
-    // int ret;
-    // uint32_t tx_idx = 0;
-    // uint8_t tmp_mac[ETH_ALEN];
-    // struct in6_addr tmp_ip;
-    // struct ethhdr *eth = (struct ethhdr *) pkt;
-    // struct ipv6hdr *ipv6 = (struct ipv6hdr *) (eth + 1);
-    // struct icmp6hdr *icmp = (struct icmp6hdr *) (ipv6 + 1);
-	// struct iphdr *ip_hdr = (struct iphdr *) (eth + sizeof(*eth));
-    // struct udphdr *udp_hdr = (struct udphdr *) (ip_hdr + sizeof(*ip_hdr));
-	// int i = 0;
-	// for (i=0; i<len; i++) {
-	// 	printf("0x%02x ", pkt+i);
-	// }
-	// printf("\n");
-	// print_hex(pkt, len);
 	bool is_ip, is_udp, is_len;
 	struct ethhdr *eth_hdr = (struct ethhdr *)pkt;
 	struct iphdr *ip_hdr = (struct iphdr *)(pkt +
@@ -1233,15 +1127,13 @@ static bool process_rx_packet(char *pkt, uint32_t len)
 }
 
 
-
-
 struct xdp_program* load_and_return_xdp_program(char* xdp_prog_name, const char* if_name)
 {
 	char errmsg[STRERR_BUFSIZE];
 	int err;
 	int if_index = if_nametoindex(if_name);
 	if (!if_index)
-		return;
+		return NULL;
 	if (!xdp_prog_name)
 		xdp_prog_name = "xdpsock_kern.o";
 	printf("# loading %s program to device %d %s\n", xdp_prog_name, if_index, if_name);
@@ -1250,14 +1142,14 @@ struct xdp_program* load_and_return_xdp_program(char* xdp_prog_name, const char*
 	if (err) {
 		libxdp_strerror(err, errmsg, sizeof(errmsg));
 		fprintf(stderr, "ERROR: program loading failed: %s\n", errmsg);
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
 	err = xdp_program__attach(xdp_prog, if_index, opt_attach_mode, 0);
 	if (err) {
 		libxdp_strerror(err, errmsg, sizeof(errmsg));
 		fprintf(stderr, "ERROR: attaching program failed: %s\n", errmsg);
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
     return xdp_prog;
