@@ -30,6 +30,7 @@ struct arg_params {
 
 /**
  * @brief Parse options from stream. Invalid line will be reported and ignored.
+ * Do not check if values are valid on this particular system (IP, hostname, ...)
  * 
  * @param arg_params 
  * @param fp 
@@ -41,6 +42,7 @@ struct arg_params {
 int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim, 
                              char comment_char, uint8_t quiet)
 {
+    // TODO: trim spaces from option and value
     char options[][ARGS_BUFFER_OPTION_LEN] = {
                     "machine_name",
                     "if_name_local_0", "if_name_local_1", "if_name_local_2",
@@ -97,13 +99,13 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
         }
 
         if (strcmp(buffer_option, "machine_name") == 0) {
-            strncpy(arg_params->machine_name, buffer_value, strlen(buffer_value));
+            strncpy(arg_params->machine_name, buffer_value, ARGS_BUFFER_VALUE_LEN);
         } else if (strcmp(buffer_option, "if_name_local_0") == 0) {
-            strncpy(arg_params->if_names[0], buffer_value, strlen(buffer_value));
+            strncpy(arg_params->if_names[0], buffer_value, ARGS_BUFFER_VALUE_LEN);
         } else if (strcmp(buffer_option, "if_name_local_1") == 0) {
-            strncpy(arg_params->if_names[1], buffer_value, strlen(buffer_value));
+            strncpy(arg_params->if_names[1], buffer_value, ARGS_BUFFER_VALUE_LEN);
         } else if (strcmp(buffer_option, "if_name_local_2") == 0) {
-            strncpy(arg_params->if_names[2], buffer_value, strlen(buffer_value));
+            strncpy(arg_params->if_names[2], buffer_value, ARGS_BUFFER_VALUE_LEN);
         // local_id
         } else if (strcmp(buffer_option, "ip_local_0") == 0) {
             struct in_addr inaddr;
@@ -199,7 +201,6 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
         clean_up:
             if (!quiet && strlen(msg_buff) > 0) {
                 printf("%s", msg_buff);
-                // printf("%s\n", buffer);
                 printf("%s\n", print_line ? buffer : "");
             }
             memset(buffer_option, 0, ARGS_BUFFER_OPTION_LEN);
@@ -223,35 +224,34 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
 
 int test_arg_params(void)
 {
-    struct arg_params *file_arg_params = malloc(sizeof(struct arg_params));
-
-    // printf("Number of options: %ld\n", sizeof(options)/ARGS_BUFFER_OPTION_LEN);
+    struct arg_params *argps = malloc(sizeof(struct arg_params));
     FILE *fp;
-    fp = fopen("cmd_args.env", "r");
+    fp = fopen("cmd_args.conf", "r");
     if (fp == NULL) {
       perror("Failed: ");
       return 1;
     }
 
-    int ret = parse_params_from_stream(file_arg_params, fp, '=', '#', 0);
+    int ret = parse_params_from_stream(argps, fp, '=', '#', 0);
     printf("count_unread: %d\n", ret);
-    printf("file_arg_params->machine_name: %s\n", file_arg_params->machine_name);
+    printf("argps->machine_name: %s\n", argps->machine_name);
     for (int port_th = 0; port_th < 3; port_th++) {
-        printf("file_arg_params->if_names[%d]: %s\n", port_th, file_arg_params->if_names[port_th]);
-        printf("file_arg_params->s_ip_addrs[%d]: 0x%.8x\n", port_th,file_arg_params->s_ip_addrs[port_th]);
-        printf("file_arg_params->d_ip_addrs[%d]: 0x%.8x\n", port_th,file_arg_params->d_ip_addrs[port_th]);
-        printf("file_arg_params->s_mac_addrs[%d]: ", port_th);
-        for (int i = 0; i < sizeof(file_arg_params->s_mac_addrs[port_th].ether_addr_octet); i++) {
-            printf("%02X", file_arg_params->s_mac_addrs[port_th].ether_addr_octet[i]);
-            printf("%c", i == sizeof(file_arg_params->s_mac_addrs[port_th].ether_addr_octet) - 1 ? '\n' : ':');
+        printf("argps->if_names[%d]: %s\n", port_th, argps->if_names[port_th]);
+        printf("argps->s_ip_addrs[%d]: 0x%.8x\n", port_th,argps->s_ip_addrs[port_th]);
+        printf("argps->d_ip_addrs[%d]: 0x%.8x\n", port_th,argps->d_ip_addrs[port_th]);
+        printf("argps->s_mac_addrs[%d]: ", port_th);
+        // TODO: extract this macaddr printing function 
+        for (int i = 0; i < sizeof(argps->s_mac_addrs[port_th].ether_addr_octet); i++) {
+            printf("%02X", argps->s_mac_addrs[port_th].ether_addr_octet[i]);
+            printf("%c", i == sizeof(argps->s_mac_addrs[port_th].ether_addr_octet) - 1 ? '\n' : ':');
         }
-        printf("file_arg_params->d_mac_addrs[%d]: ", port_th);
-        for (int oct_th = 0; oct_th < sizeof(file_arg_params->d_mac_addrs[port_th].ether_addr_octet); oct_th++) {
-            printf("%02X", file_arg_params->d_mac_addrs[port_th].ether_addr_octet[oct_th]);
-            printf("%c", oct_th == sizeof(file_arg_params->d_mac_addrs[port_th].ether_addr_octet) - 1 ? '\n' : ':');
+        printf("argps->d_mac_addrs[%d]: ", port_th);
+        for (int oct_th = 0; oct_th < sizeof(argps->d_mac_addrs[port_th].ether_addr_octet); oct_th++) {
+            printf("%02X", argps->d_mac_addrs[port_th].ether_addr_octet[oct_th]);
+            printf("%c", oct_th == sizeof(argps->d_mac_addrs[port_th].ether_addr_octet) - 1 ? '\n' : ':');
         }
     }
-    free(file_arg_params);
+    free(argps);
     fclose(fp);
     return 0;
 }

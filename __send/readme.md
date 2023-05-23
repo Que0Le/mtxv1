@@ -1,7 +1,32 @@
-
+### Dev machine 
 ```bash
-make && cpalphabeta.sh
-sudo ./xdpsock -i enp2s0 -H 00:07:32:74:c5:3b -G 00:07:32:74:dc:8f -t -T 100000
+# nano ~/.ssh/config
+Host alphaupc
+  HostName 192.168.1.111
+  IdentityFile ~/.ssh/key_alpha
+  User alpha
+
+Host betaupc
+  HostName 192.168.1.211
+  IdentityFile ~/.ssh/key_beta
+  User beta
+# nano ~/bashes/cpalphabeta.sh
+scp  ./xdpsock_kern.o ./u*.py ./xdpsock cmd_args.conf alphaupc:/home/alpha/
+scp  ./xdpsock_kern.o ./u*.py ./xdpsock cmd_args.conf betaupc:/home/beta/
+```
+### How to run
+```bash
+# On dev machine
+make && bash ~/bashes/cpalphabeta.sh
+# On alpha machine: send in batch with timeout
+sudo ./xdpsock -i enp2s0 -t -T 1000000 -b 4
+# On beta machine:
+python3 userver.py 10.10.2.22
+python3 userver.py 10.10.5.22
+
+
+
+# sudo ./xdpsock -i enp2s0 -H 00:07:32:74:c5:3b -G 00:07:32:74:dc:8f -t -T 100000
 
 sudo ip link set dev enp2s0 xdpdrv off
 sudo ip link set dev enp5s0 xdpdrv off

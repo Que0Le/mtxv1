@@ -41,6 +41,9 @@
 #include <bpf/bpf.h>
 #include "xdpsock.h"
 
+#include "indepent_helpers.h"
+
+struct arg_params *argps;
 
 char* if_names[3] = {"enp2s0", "enp5s0", "enp7s0"};
 //10.10.2.11, 10.10.5.11, 10.10.7.11 

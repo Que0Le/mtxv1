@@ -42,7 +42,6 @@
 #include "xdpsock.h"
 #include "helpers.h"
 
-
 static struct option long_options[] = {
 	{"rxdrop", no_argument, 0, 'r'},
 	{"txonly", no_argument, 0, 't'},
@@ -692,6 +691,19 @@ int main(int argc, char **argv)
 	int ret;
 	// void *bufs;
 
+	argps = malloc(sizeof(struct arg_params));
+    FILE *fp;
+    fp = fopen("cmd_args.conf", "r");
+    if (fp == NULL) {
+		perror("Failed opening config file: ");
+		return 1;
+    }
+    if(parse_params_from_stream(argps, fp, '=', '#', 0)) {
+		perror("Failed reading options from file. Exit.");
+		exit(EXIT_FAILURE);
+	}
+
+
 	parse_command_line(argc, argv);
 
 	if (opt_reduced_cap) {
@@ -850,6 +862,8 @@ out:
 		xdpsock_cleanup_index(i);
 		munmap(all_bufs[i], NUM_FRAMES * opt_xsk_frame_size);
 	}
+
+	free(argps);
 
 	return 0;
 }
