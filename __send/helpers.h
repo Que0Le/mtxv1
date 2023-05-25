@@ -33,6 +33,8 @@
 #include <time.h>
 #include <unistd.h>
 #include <sched.h>
+#include <linux/ipv6.h>
+#include <linux/icmpv6.h>
 
 #include <xdp/xsk.h>
 #include <xdp/libxdp.h>
@@ -43,7 +45,6 @@
 
 #include "indepent_helpers.h"
 
-struct arg_params *argps;
 
 char* if_names[3] = {"enp2s0", "enp5s0", "enp7s0"};
 //10.10.2.11, 10.10.5.11, 10.10.7.11 
@@ -1015,7 +1016,6 @@ static void create_custom_udp_packet(int socket_th, char * pkt_data,
 	struct pktgen_hdr *pktgen_hdr;
 	struct udphdr *udp_hdr;
 	struct iphdr *ip_hdr;
-	// static [XSK_UMEM__DEFAULT_FRAME_SIZE];
 
 	struct ethhdr *eth_hdr = (struct ethhdr *)pkt_data;
 
@@ -1029,10 +1029,8 @@ static void create_custom_udp_packet(int socket_th, char * pkt_data,
 						sizeof(struct iphdr) +
 						sizeof(struct udphdr));
 	/* ethernet header */
-	// memcpy(eth_hdr->h_dest, &opt_txdmac, ETH_ALEN);
-	// memcpy(eth_hdr->h_source, &opt_txsmac, ETH_ALEN);
-	memcpy(eth_hdr->h_dest, &d_mac_addrs[socket_th], ETH_ALEN);
-	memcpy(eth_hdr->h_source, &s_mac_addrs[socket_th], ETH_ALEN);
+	memcpy(eth_hdr->h_dest, &argps->d_mac_addrs[socket_th], ETH_ALEN);
+	memcpy(eth_hdr->h_source, &argps->s_mac_addrs[socket_th], ETH_ALEN);
 	eth_hdr->h_proto = htons(ETH_P_IP);
 
 	/* IP header */
@@ -1044,33 +1042,28 @@ static void create_custom_udp_packet(int socket_th, char * pkt_data,
 	ip_hdr->frag_off = 0;
 	ip_hdr->ttl = IPDEFTTL;
 	ip_hdr->protocol = IPPROTO_UDP;
-	ip_hdr->saddr = htonl(s_ip_addrs[socket_th]);
-	ip_hdr->daddr = htonl(d_ip_addrs[socket_th]);
+	ip_hdr->saddr =  argps->s_ip_addrs[socket_th];
+	ip_hdr->daddr = argps->d_ip_addrs[socket_th];
 
 	/* IP header checksum */
 	ip_hdr->check = 0;
 	ip_hdr->check = ip_fast_csum((const void *)ip_hdr, ip_hdr->ihl);
 
 	/* UDP header */
-	udp_hdr->source = htons(0x1000);
-	udp_hdr->dest = htons(0x1000);
+	udp_hdr->source = htons(argps->s_ports[socket_th]);
+	udp_hdr->dest = htons(argps->d_ports[socket_th]);
 	udp_hdr->len = htons(UDP_PKT_SIZE);
 
 	if (opt_tstamp)
 		pktgen_hdr->pgh_magic = htonl(PKTGEN_MAGIC);
 
 	/* UDP data */
-	// memset32_htonl(pkt_data + PKT_HDR_SIZE, opt_pkt_fill_pattern,
-	// 	       UDP_PKT_DATA_SIZE);
 	snprintf(pkt_data + PKT_HDR_SIZE, UDP_PKT_DATA_SIZE, "Pkt = %d", current_pkt++);
 
 	/* UDP header checksum */
 	udp_hdr->check = 0;
 	udp_hdr->check = udp_csum(ip_hdr->saddr, ip_hdr->daddr, UDP_PKT_SIZE,
 				  IPPROTO_UDP, (u16 *)udp_hdr);
-
-	// memcpy(xsk_umem__get_data(umem->buffer, addr), pkt_data,
-	// 	PKT_SIZE);
 }
 
 void print_hex(const char *string, int len)
@@ -1086,12 +1079,6 @@ void print_hex(const char *string, int len)
         printf("\n\n");
 }
 
-#include <arpa/inet.h>
-#include <net/if.h>
-#include <linux/if_link.h>
-#include <linux/if_ether.h>
-#include <linux/ipv6.h>
-#include <linux/icmpv6.h>
 static bool process_rx_packet(char *pkt, uint32_t len)
 {
 	bool is_ip, is_udp, is_len;

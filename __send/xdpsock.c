@@ -744,7 +744,7 @@ int main(int argc, char **argv)
 			opt_pkt_size = PKTGEN_SIZE_MIN;
 	}
 
-	opt_num_xsks = 2;
+	opt_num_xsks = 3;
 	void *all_bufs[opt_num_xsks];
 	for (int s_th = 0; s_th < opt_num_xsks; s_th++) {
 		struct xsk_umem_info *umem;

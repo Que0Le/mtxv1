@@ -5,8 +5,8 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <netinet/ether.h>
-
-
+#include <errno.h>
+#include <stdbool.h>
 
 #define ARGS_BUFFER_MAX_LEN 256
 #define ARGS_BUFFER_OPTION_LEN 128
@@ -21,12 +21,14 @@ struct arg_params {
     char machine_name[ARGS_BUFFER_VALUE_LEN];
     char if_names[3][ARGS_BUFFER_VALUE_LEN];
     uint32_t s_ip_addrs[3]; // inet_pton inet_ntop
-    struct sockaddr_in s_addrs[3];
     uint32_t d_ip_addrs[3];
+    unsigned short s_ports[3];
+    unsigned short d_ports[3];
     struct ether_addr s_mac_addrs[3]; // ether_ntoa_r ether_aton_r
     struct ether_addr d_mac_addrs[3];
 };
 
+struct arg_params *argps;
 
 /**
  * @brief Parse options from stream. Invalid line will be reported and ignored.
@@ -47,20 +49,23 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
                     "machine_name",
                     "if_name_local_0", "if_name_local_1", "if_name_local_2",
                     "ip_local_0", "ip_local_1", "ip_local_2",
+                    "s_port_0", "s_port_1", "s_port_2",
                     "macaddr_local_0", "macaddr_local_1", "macaddr_local_2",
                     "ip_remote_0", "ip_remote_1", "ip_remote_2",
+                    "d_port_0", "d_port_1", "d_port_2",
                     "macaddr_remote_0", "macaddr_remote_1", "macaddr_remote_2",
 
                     };
     int nbr_option = sizeof(options)/ARGS_BUFFER_OPTION_LEN;
-    printf("Number of options: %d\n", nbr_option);
+    if (!quiet)
+        printf("PARSE_OPTION: Number of options need to be read: %d\n", nbr_option);
     char buffer_option[ARGS_BUFFER_OPTION_LEN] = {0};
     char buffer_value[ARGS_BUFFER_VALUE_LEN] = {0};
     char buffer[ARGS_BUFFER_MAX_LEN] = {0};
     // Hold message to be printed out if error
     // Do not include newline char at the end!
     char msg_buff[MSG_BUFFER_LEN] = {0};
-    int print_line = 0;     // print also current line if set
+    int print_line = 0;     // if set, will print 'buffer' for debug
 
     uint8_t option_has_been_read[nbr_option];
     for (int i = 0; i < nbr_option; i++) {
@@ -69,7 +74,7 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
 
     while (fgets(buffer, ARGS_BUFFER_MAX_LEN, fp))
     {
-        if (buffer[0] == comment_char)
+        if (buffer[0] == comment_char  || buffer[0] == '\n')
             continue;
         // Remove trailing newline
         buffer[strcspn(buffer, "\n")] = 0;
@@ -94,7 +99,7 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
         // printf("%s, %s\n", buffer_option, buffer_value);
         if (strlen(buffer_option) == 0 || strlen(buffer_value) == 0) {
             // printf("hhehe\n");
-            print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Can't extract option or value: ");
+            print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Can't extract option or value from line: ");
             goto clean_up;
         }
 
@@ -150,6 +155,56 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
                 goto clean_up;
             }
             memcpy(&arg_params->d_ip_addrs[2], &inaddr, sizeof(uint32_t));
+        // local_port
+         } else if (strcmp(buffer_option, "s_port_0") == 0) {
+            long port = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (port < 0 || port > 65535 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading port number: ");
+                goto clean_up;
+            }
+            arg_params->s_ports[0] = (unsigned short) port;
+        } else if (strcmp(buffer_option, "s_port_1") == 0) {
+            long port = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (port < 0 || port > 65535 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading port number: ");
+                goto clean_up;
+            }
+            arg_params->s_ports[1] = (unsigned short) port;
+        } else if (strcmp(buffer_option, "s_port_2") == 0) {
+            long port = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (port < 0 || port > 65535 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading port number: ");
+                goto clean_up;
+            }
+            arg_params->s_ports[2] = (unsigned short) port;
+        // remote_port
+         } else if (strcmp(buffer_option, "d_port_0") == 0) {
+            long port = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (port < 0 || port > 65535 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading port number: ");
+                goto clean_up;
+            }
+            arg_params->d_ports[0] = (unsigned short) port;
+        } else if (strcmp(buffer_option, "d_port_1") == 0) {
+            long port = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (port < 0 || port > 65535 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading port number: ");
+                goto clean_up;
+            }
+            arg_params->d_ports[1] = (unsigned short) port;
+        } else if (strcmp(buffer_option, "d_port_2") == 0) {
+            long port = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (port < 0 || port > 65535 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading port number: ");
+                goto clean_up;
+            }
+            arg_params->d_ports[2] = (unsigned short) port;
         // local_mac
         } else if (strcmp(buffer_option, "macaddr_local_0") == 0) {
             if (!ether_aton_r(buffer_value, &arg_params->s_mac_addrs[0])) {
@@ -200,8 +255,8 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
 
         clean_up:
             if (!quiet && strlen(msg_buff) > 0) {
-                printf("%s", msg_buff);
-                printf("%s\n", print_line ? buffer : "");
+                printf("PARSE_OPTION: %s", msg_buff);
+                printf("\"%s\"\n", print_line ? buffer : "");
             }
             memset(buffer_option, 0, ARGS_BUFFER_OPTION_LEN);
             memset(buffer_value, 0, ARGS_BUFFER_VALUE_LEN);
@@ -215,7 +270,7 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
         if (option_has_been_read[i]) {
             continue;
         }
-        printf("... failed to read option '%s'.\n", options[i]);
+        printf("... failed to read option '%s' from input\n", options[i]);
         count_unread++;
     }
     return count_unread;
@@ -236,9 +291,12 @@ int test_arg_params(void)
     printf("count_unread: %d\n", ret);
     printf("argps->machine_name: %s\n", argps->machine_name);
     for (int port_th = 0; port_th < 3; port_th++) {
+        printf("#####################################\n");
         printf("argps->if_names[%d]: %s\n", port_th, argps->if_names[port_th]);
-        printf("argps->s_ip_addrs[%d]: 0x%.8x\n", port_th,argps->s_ip_addrs[port_th]);
-        printf("argps->d_ip_addrs[%d]: 0x%.8x\n", port_th,argps->d_ip_addrs[port_th]);
+        printf("argps->s_ip_addrs[%d]: 0x%.8x\n", port_th, argps->s_ip_addrs[port_th]);
+        printf("argps->s_ports[%d]: %d\n", port_th, argps->s_ports[port_th]);
+        printf("argps->d_ip_addrs[%d]: 0x%.8x\n", port_th, argps->d_ip_addrs[port_th]);
+        printf("argps->d_ports[%d]: %d\n", port_th, argps->d_ports[port_th]);
         printf("argps->s_mac_addrs[%d]: ", port_th);
         // TODO: extract this macaddr printing function 
         for (int i = 0; i < sizeof(argps->s_mac_addrs[port_th].ether_addr_octet); i++) {

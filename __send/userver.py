@@ -9,4 +9,4 @@ server_socket.bind(bind_addr)
 
 while True:
     message, address = server_socket.recvfrom(1024)
-    print(bind_addr, address, message)
+    print(f"binded {bind_addr} | from {address} msg={message}")    
