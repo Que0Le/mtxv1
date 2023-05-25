@@ -42,6 +42,9 @@
 #include "xdpsock.h"
 #include "helpers.h"
 
+int use_opt_file = 0;
+char *hostname;
+
 static struct option long_options[] = {
 	{"rxdrop", no_argument, 0, 'r'},
 	{"txonly", no_argument, 0, 't'},
@@ -89,6 +92,7 @@ static void usage(const char *prog)
 	const char *str =
 		"  Usage: %s [OPTIONS]\n"
 		"  Options:\n"
+		"  -h, --hostname	Host name. This is used to append to the env file (default empty)\n"
 		"  -r, --rxdrop		Discard all incoming packets (default)\n"
 		"  -t, --txonly		Only send packets\n"
 		"  -l, --l2fwd		MAC swap L2 forwarding\n"
@@ -149,12 +153,14 @@ static void parse_command_line(int argc, char **argv)
 
 	for (;;) {
 		c = getopt_long(argc, argv,
-				"rtli:q:pSNn:w:O:czf:muMd:b:C:s:P:VJ:K:G:H:T:yW:U:xQaI:BR",
+				"h:rtli:q:pSNn:w:O:czf:muMd:b:C:s:P:VJ:K:G:H:T:yW:U:xQaI:BR",
 				long_options, &option_index);
 		if (c == -1)
 			break;
 
 		switch (c) {
+		case 'h':
+			hostname = optarg;
 		case 'r':
 			opt_bench = BENCH_RXDROP;
 			break;
@@ -310,11 +316,13 @@ static void parse_command_line(int argc, char **argv)
 		}
 	}
 
-	opt_ifindex = if_nametoindex(opt_if);
-	if (!opt_ifindex) {
-		fprintf(stderr, "ERROR: interface \"%s\" does not exist\n",
-			opt_if);
-		usage(basename(argv[0]));
+	if (!use_opt_file) {
+		opt_ifindex = if_nametoindex(opt_if);
+		if (!opt_ifindex) {
+			fprintf(stderr, "ERROR: interface \"%s\" does not exist\n",
+				opt_if);
+			usage(basename(argv[0]));
+		}
 	}
 
 	if ((opt_xsk_frame_size & (opt_xsk_frame_size - 1)) &&
@@ -685,26 +693,30 @@ int main(int argc, char **argv)
 	struct rlimit r = {RLIM_INFINITY, RLIM_INFINITY};
 	bool rx = false, tx = false;
 	struct sched_param schparam;
-	// struct xsk_umem_info *umem;
-	// int xsks_map_fd = 0;
 	pthread_t pt;
 	int ret;
-	// void *bufs;
-
-	argps = malloc(sizeof(struct arg_params));
-    FILE *fp;
-    fp = fopen("cmd_args.conf", "r");
-    if (fp == NULL) {
-		perror("Failed opening config file: ");
-		return 1;
-    }
-    if(parse_params_from_stream(argps, fp, '=', '#', 0)) {
-		perror("Failed reading options from file. Exit.");
-		exit(EXIT_FAILURE);
-	}
-
+	// disable some checking from original code, and use opt from env file
+	// TODO: what if set to 1? or remove this completely
+	use_opt_file = 1;	
+	char buffer_env_file[256] = {0};  
 
 	parse_command_line(argc, argv);
+
+	if (use_opt_file) {
+		snprintf(buffer_env_file, 256, "cmd_args__%s.conf", hostname);
+		printf("Reading opt from file: %s\n", buffer_env_file);
+		argps = malloc(sizeof(struct arg_params));
+		FILE *fp;
+		fp = fopen(buffer_env_file, "r");
+		if (fp == NULL) {
+			perror("Failed opening config file: ");
+			return 1;
+		}
+		if(parse_params_from_stream(argps, fp, '=', '#', 0)) {
+			perror("Failed reading options from file. Exit.");
+			exit(EXIT_FAILURE);
+		}
+	}
 
 	if (opt_reduced_cap) {
 		if (capget(&hdr, data)  < 0)
@@ -732,12 +744,12 @@ int main(int argc, char **argv)
 		}
 	}
 
-	ether_aton_r("00:07:32:74:c5:3b", &s_mac_addrs[0]);
-	ether_aton_r("00:07:32:74:c5:3c", &s_mac_addrs[1]);
-	ether_aton_r("00:07:32:74:c5:3d", &s_mac_addrs[2]);
-	ether_aton_r("00:07:32:74:dc:8f", &d_mac_addrs[0]);
-	ether_aton_r("00:07:32:74:dc:90", &d_mac_addrs[1]);
-	ether_aton_r("00:07:32:74:dc:91", &d_mac_addrs[2]);
+	// ether_aton_r("00:07:32:74:c5:3b", &s_mac_addrs[0]);
+	// ether_aton_r("00:07:32:74:c5:3c", &s_mac_addrs[1]);
+	// ether_aton_r("00:07:32:74:c5:3d", &s_mac_addrs[2]);
+	// ether_aton_r("00:07:32:74:dc:8f", &d_mac_addrs[0]);
+	// ether_aton_r("00:07:32:74:dc:90", &d_mac_addrs[1]);
+	// ether_aton_r("00:07:32:74:dc:91", &d_mac_addrs[2]);
 
 	if (opt_bench == BENCH_TXONLY) {
 		if (opt_tstamp && opt_pkt_size < PKTGEN_SIZE_MIN)
@@ -750,7 +762,7 @@ int main(int argc, char **argv)
 		struct xsk_umem_info *umem;
 		void *bufs;
 		printf("# Setting up XDP socket on device %d %s\n", 
-					if_nametoindex(if_names[s_th]), if_names[s_th]);
+					if_nametoindex(argps->if_names[s_th]), argps->if_names[s_th]);
 		/* Reserve memory for the umem. Use hugepages if unaligned chunk mode */
 		bufs = mmap(NULL, NUM_FRAMES * opt_xsk_frame_size,
 				PROT_READ | PROT_WRITE,
@@ -769,13 +781,13 @@ int main(int argc, char **argv)
 		}
 		if (opt_bench == BENCH_L2FWD || opt_bench == BENCH_TXONLY)
 			tx = true;
-		xsks[s_th] = xsk_configure_socket(umem, rx, tx, if_names[s_th]);
+		xsks[s_th] = xsk_configure_socket(umem, rx, tx, argps->if_names[s_th]);
 		num_socks++;
 		apply_setsockopt(xsks[s_th]);
 
 		/* Set up custom map of our bpf program */
 		int xsks_map;
-		xdp_progs[s_th] = load_and_return_xdp_program("xdpsock_kern.o", if_names[s_th]);
+		xdp_progs[s_th] = load_and_return_xdp_program("xdpsock_kern.o", argps->if_names[s_th]);
 		if (!xdp_progs[s_th])
 			goto out;
 		xsks_map = lookup_bpf_map(xdp_program__fd(xdp_progs[s_th]));
@@ -858,7 +870,7 @@ out:
 	//
 	for (int i = 0; i < num_socks; i++) {
 		printf("-- Clean xdp socket on device %d %s\n", 
-					if_nametoindex(if_names[i]), if_names[i]);
+					if_nametoindex(argps->if_names[i]), argps->if_names[i]);
 		xdpsock_cleanup_index(i);
 		munmap(all_bufs[i], NUM_FRAMES * opt_xsk_frame_size);
 	}

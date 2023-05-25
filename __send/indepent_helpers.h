@@ -111,6 +111,7 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
             strncpy(arg_params->if_names[1], buffer_value, ARGS_BUFFER_VALUE_LEN);
         } else if (strcmp(buffer_option, "if_name_local_2") == 0) {
             strncpy(arg_params->if_names[2], buffer_value, ARGS_BUFFER_VALUE_LEN);
+        // TODO: refactor. Consider snprintf "ip_local_%d" and a for loop.
         // local_id
         } else if (strcmp(buffer_option, "ip_local_0") == 0) {
             struct in_addr inaddr;

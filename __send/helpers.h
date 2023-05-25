@@ -606,7 +606,7 @@ static void remove_xdp_program_at_index(int socket_th)
 	int err;
 
 	err = xdp_program__detach(xdp_progs[socket_th], 
-			if_nametoindex(if_names[socket_th]), opt_attach_mode, 0);
+			if_nametoindex(argps->if_names[socket_th]), opt_attach_mode, 0);
 	if (err)
 		fprintf(stderr, "Could not detach XDP program. Error: %s\n", strerror(-err));
 }
