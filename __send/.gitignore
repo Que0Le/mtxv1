@@ -2,3 +2,4 @@ xdpsock
 test.c
 test
 t
+cmd_args__test*.conf

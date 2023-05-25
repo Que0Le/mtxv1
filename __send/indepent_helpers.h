@@ -26,6 +26,7 @@ struct arg_params {
     unsigned short d_ports[3];
     struct ether_addr s_mac_addrs[3]; // ether_ntoa_r ether_aton_r
     struct ether_addr d_mac_addrs[3];
+    int rx_queues[3];
 };
 
 struct arg_params *argps;
@@ -54,7 +55,7 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
                     "ip_remote_0", "ip_remote_1", "ip_remote_2",
                     "d_port_0", "d_port_1", "d_port_2",
                     "macaddr_remote_0", "macaddr_remote_1", "macaddr_remote_2",
-
+                    "rx_queue_0", "rx_queue_1", "rx_queue_2"
                     };
     int nbr_option = sizeof(options)/ARGS_BUFFER_OPTION_LEN;
     if (!quiet)
@@ -238,7 +239,32 @@ int parse_params_from_stream(struct arg_params *arg_params, FILE *fp, char delim
                 print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure coverting mac addr to binary: ");
                 goto clean_up;
             }
-
+        // rx_queue
+        } else if (strcmp(buffer_option, "rx_queue_0") == 0) {
+            int queue = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (queue < 0 || queue > 128 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading rx queue number: ");
+                goto clean_up;
+            }
+            arg_params->rx_queues[0] = queue;
+        } else if (strcmp(buffer_option, "rx_queue_1") == 0) {
+            int queue = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (queue < 0 || queue > 128 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading rx queue number: ");
+                goto clean_up;
+            }
+            arg_params->rx_queues[1] = queue;
+        } else if (strcmp(buffer_option, "rx_queue_2") == 0) {
+            int queue = strtol(buffer_value, NULL, 10);
+            const bool range_error = errno == ERANGE;
+            if (queue < 0 || queue > 128 || range_error) {
+                print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Failure reading rx queue number: ");
+                goto clean_up;
+            }
+            arg_params->rx_queues[2] = queue;
+        
         } else {
             print_line = snprintf(msg_buff, MSG_BUFFER_LEN, "Not in any option: ");
             goto clean_up;

@@ -11,20 +11,33 @@ Host betaupc
   IdentityFile ~/.ssh/key_beta
   User beta
 # nano ~/bashes/cpalphabeta.sh
-scp  ./xdpsock_kern.o ./u*.py ./xdpsock cmd_args.conf alphaupc:/home/alpha/
-scp  ./xdpsock_kern.o ./u*.py ./xdpsock cmd_args.conf betaupc:/home/beta/
+scp  ./xdpsock_kern.o ./u*.py ./xdpsock cmd_args*.conf alphaupc:/home/alpha/
+scp  ./xdpsock_kern.o ./u*.py ./xdpsock cmd_args*.conf betaupc:/home/beta/
 ```
 ### How to run
 ```bash
 # On dev machine
 make && bash ~/bashes/cpalphabeta.sh
-# On alpha machine: send in batch with timeout
-sudo ./xdpsock -i enp2s0 -t -T 1000000 -b 4
+
+# On alpha machine: send in batch with timeout. 
+# We use test_ config file:
+cp cmd_orgs.conf cmd_orgs__test_alphaupc.conf 
+sudo ./xdpsock -h test_alphaupc -t -T 1000000 -b 4
+
 # On beta machine:
+cp cmd_orgs.conf cmd_orgs__test_betaupc.conf
+##### Receiving
+# Which rx queue to listen to. Need to do it manually
+# 'ethtool -N <interface> flow-type udp4 action 42' seems to not supported
+watch 'sudo ethtool -S enp2s0 | grep rx_queue_._packets:'
+watch 'sudo ethtool -S enp5s0 | grep rx_queue_._packets:'
+watch 'sudo ethtool -S enp7s0 | grep rx_queue_._packets:'
+# Edit test_alphaupc conf file. Then:
+sudo ./xdpsock -h test_betaupc -r
+# Userspace udp server for testing:
 python3 userver.py 10.10.2.22
 python3 userver.py 10.10.5.22
-
-
+python3 userver.py 10.10.7.22
 
 # sudo ./xdpsock -i enp2s0 -H 00:07:32:74:c5:3b -G 00:07:32:74:dc:8f -t -T 100000
 

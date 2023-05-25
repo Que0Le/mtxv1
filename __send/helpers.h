@@ -957,7 +957,7 @@ static void xsk_populate_fill_ring(struct xsk_umem_info *umem)
 }
 
 static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem,
-						    bool rx, bool tx, const char *if_name)
+						    bool rx, bool tx, const char *if_name, int rx_queue)
 {
 	struct xsk_socket_config cfg;
 	struct xsk_socket_info *xsk;
@@ -989,8 +989,9 @@ static struct xsk_socket_info *xsk_configure_socket(struct xsk_umem_info *umem,
 
 	rxr = rx ? &xsk->rx : NULL;
 	txr = tx ? &xsk->tx : NULL;
-	printf("# Configurating xsk for interface: %s on queue %d\n", if_name, opt_queue);
-	ret = xsk_socket__create(&xsk->xsk, if_name, opt_queue, umem->umem,
+	printf("# Configurating xsk for interface: %s on queue %d\n", if_name, rx_queue);
+	// TODO: rx_queue has side effect on tx path?
+	ret = xsk_socket__create(&xsk->xsk, if_name, rx_queue, umem->umem,
 				 rxr, txr, &cfg);
 	if (ret)
 		exit_with_error(-ret);
@@ -1081,7 +1082,8 @@ void print_hex(const char *string, int len)
 
 static bool process_rx_packet(char *pkt, uint32_t len)
 {
-	bool is_ip, is_udp, is_len;
+	// bool is_ip, is_udp, is_len;
+
 	struct ethhdr *eth_hdr = (struct ethhdr *)pkt;
 	struct iphdr *ip_hdr = (struct iphdr *)(pkt +
 					sizeof(struct ethhdr));
@@ -1089,30 +1091,34 @@ static bool process_rx_packet(char *pkt, uint32_t len)
 					sizeof(struct ethhdr) +
 					sizeof(struct iphdr));
 
-	// printf("%d\n", (sizeof(*eth_hdr) + sizeof(*ip_hdr) + sizeof(*udp_hdr)));
-	if (ntohs(eth_hdr->h_proto) == ETH_P_IP)
-		is_ip = true;
-	if (len >= (sizeof(*eth_hdr) + sizeof(*ip_hdr) + sizeof(*udp_hdr)))
-		is_len = true;
-	if (ip_hdr->protocol == IPPROTO_UDP)
-		is_udp = true;
-	if (!(is_ip && is_len && is_udp)) {
-	printf("pkt test: is_ip %d is_len %d is_udp %d\n",  is_ip, is_udp, is_len);
+	// if (ntohs(eth_hdr->h_proto) == ETH_P_IP)
+	// 	is_ip = true;
+	// if (len >= (sizeof(*eth_hdr) + sizeof(*ip_hdr) + sizeof(*udp_hdr)))
+	// 	is_len = true;
+	// if (ip_hdr->protocol == IPPROTO_UDP)
+	// 	is_udp = true;
+	// if (!(is_ip && is_len && is_udp)) {
+	// 	printf("pkt test: is_ip %d is_len %d is_udp %d\n",  is_ip, is_udp, is_len);
+	// 	return false;
+	// }
+	if (ntohs(eth_hdr->h_proto) != ETH_P_IP ||
+		len < (sizeof(*eth_hdr) + sizeof(*ip_hdr) + sizeof(*udp_hdr)) ||
+		ip_hdr->protocol != IPPROTO_UDP)
 		return false;
-	}
-    // if (ntohs(eth->h_proto) != ETH_P_IP ||
-    //     len < (sizeof(*eth) + sizeof(*ip_hdr) + sizeof(*udp_hdr))  ||
-    //     ip_hdr->protocol != IPPROTO_UDP)
-    //     return false;
-	printf("IP: src(%d) dest(%d)\n", ntohl(ip_hdr->saddr), ntohl(ip_hdr->daddr));
-	printf("len %d src %d dest %d  udp_hdr->len %d\n", len, 
-		ntohs(udp_hdr->source), (udp_hdr->dest), 
-		ntohs(udp_hdr->len));
-    char buff[100];
-    memcpy(buff, (char *) udp_hdr+sizeof(struct udphdr), 18/* udp_hdr->len - sizeof(udp_hdr) */);
-    buff[99] = '\0';
-    printf("pkt (%ld bytes): '''%s'''\n", 
-		ntohs(udp_hdr->len) - sizeof(struct udphdr), buff);
+
+	char buff_sip[INET_ADDRSTRLEN];
+	char buff_dip[INET_ADDRSTRLEN];
+	char buff_payload[100];
+
+	if (!inet_ntop(AF_INET, &ip_hdr->saddr, buff_sip, INET_ADDRSTRLEN))
+		return false;
+	if (!inet_ntop(AF_INET, &ip_hdr->daddr, buff_dip, INET_ADDRSTRLEN))
+		return false;
+    memcpy(buff_payload, (char *) udp_hdr + sizeof(struct udphdr), 18/* udp_hdr->len - sizeof(udp_hdr) */);
+	printf("Msg (%s:%d)->(%s:%d) (%ld bytes): '''%s'''\n",
+		   buff_sip, ntohs(udp_hdr->source),
+		   buff_dip, ntohs(udp_hdr->dest),
+		   ntohs(udp_hdr->len) - sizeof(struct udphdr), buff_payload);
     return true;
 }
 

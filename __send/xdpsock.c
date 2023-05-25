@@ -43,7 +43,7 @@
 #include "helpers.h"
 
 int use_opt_file = 0;
-char *hostname;
+char *hostname = "";
 
 static struct option long_options[] = {
 	{"rxdrop", no_argument, 0, 'r'},
@@ -781,7 +781,8 @@ int main(int argc, char **argv)
 		}
 		if (opt_bench == BENCH_L2FWD || opt_bench == BENCH_TXONLY)
 			tx = true;
-		xsks[s_th] = xsk_configure_socket(umem, rx, tx, argps->if_names[s_th]);
+		xsks[s_th] = xsk_configure_socket(umem, rx, tx, argps->if_names[s_th],
+										  argps->rx_queues[s_th]);
 		num_socks++;
 		apply_setsockopt(xsks[s_th]);
 
