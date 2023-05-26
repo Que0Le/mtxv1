@@ -1059,8 +1059,8 @@ static void create_custom_udp_packet(int socket_th, char * pkt_data,
 		pktgen_hdr->pgh_magic = htonl(PKTGEN_MAGIC);
 
 	/* UDP data */
+	printf("__ Creating pkt=%d for socket_th=%d\n", current_pkt, socket_th);
 	snprintf(pkt_data + PKT_HDR_SIZE, UDP_PKT_DATA_SIZE, "Pkt = %d", current_pkt++);
-
 	/* UDP header checksum */
 	udp_hdr->check = 0;
 	udp_hdr->check = udp_csum(ip_hdr->saddr, ip_hdr->daddr, UDP_PKT_SIZE,

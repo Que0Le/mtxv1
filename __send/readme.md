@@ -22,7 +22,7 @@ make && bash ~/bashes/cpalphabeta.sh
 # On alpha machine: send in batch with timeout. 
 # We use test_ config file:
 cp cmd_orgs.conf cmd_orgs__test_alphaupc.conf 
-sudo ./xdpsock -h test_alphaupc -t -T 1000000 -b 4
+sudo ./xdpsock -h test_alphaupc -t -T 1000000 -b 2 -Q
 
 # On beta machine:
 cp cmd_orgs.conf cmd_orgs__test_betaupc.conf
@@ -33,7 +33,7 @@ watch 'sudo ethtool -S enp2s0 | grep rx_queue_._packets:'
 watch 'sudo ethtool -S enp5s0 | grep rx_queue_._packets:'
 watch 'sudo ethtool -S enp7s0 | grep rx_queue_._packets:'
 # Edit test_alphaupc conf file. Then:
-sudo ./xdpsock -h test_betaupc -r
+sudo ./xdpsock -h test_betaupc -r -Q
 # Userspace udp server for testing:
 python3 userver.py 10.10.2.22
 python3 userver.py 10.10.5.22
