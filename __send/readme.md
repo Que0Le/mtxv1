@@ -38,9 +38,13 @@ sudo ./xdpsock -h test_betaupc -r
 python3 userver.py 10.10.2.22
 python3 userver.py 10.10.5.22
 python3 userver.py 10.10.7.22
+# or use tcpdump
+sudo tcpdump -i enp2s0 -n udp -A
+sudo tcpdump -i enp5s0 -n udp -A
+sudo tcpdump -i enp7s0 -n udp -A
 
-# sudo ./xdpsock -i enp2s0 -H 00:07:32:74:c5:3b -G 00:07:32:74:dc:8f -t -T 100000
-
+# Kill program. sadly, bpfmaps are not removed this way:
+sudo kill -9 "$(pgrep xdpsock)"
 sudo ip link set dev enp2s0 xdpdrv off
 sudo ip link set dev enp5s0 xdpdrv off
 sudo ip link set dev enp7s0 xdpdrv off
@@ -98,7 +102,7 @@ sudo bpftool map dump id 273
 ping -6 fe80::7419:23df:2478:806d -I enp1s0
 make; sudo ./send_user --filename send_kern.o -d enp7s0 -q
 
-sudo kill -9 "$(pgrep send_user)"
+sudo kill -9 "$(pgrep xdpsock)"
 
 ```
 
